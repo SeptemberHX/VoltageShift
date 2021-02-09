@@ -351,15 +351,17 @@ void AnVMSRUserClient::stop(IOService *provider)
 // available to be called
 IOExternalMethod * AnVMSRUserClient::getTargetAndMethodForIndex(IOService **target, UInt32 index)
 {
-	static const IOExternalMethod methodDescs[3] = {
+	static const IOExternalMethod methodDescs[4] = {
 		{ NULL, (IOMethod) &AnVMSRUserClient::actionMethodRDMSR, kIOUCStructIStructO,
             kIOUCVariableStructureSize, kIOUCVariableStructureSize },
 		{ NULL, (IOMethod) &AnVMSRUserClient::actionMethodWRMSR, kIOUCStructIStructO,
             kIOUCVariableStructureSize, kIOUCVariableStructureSize },
+        { NULL, (IOMethod) &AnVMSRUserClient::actionMethodPrepareMap, kIOUCStructIStructO,
+            kIOUCVariableStructureSize, kIOUCVariableStructureSize },
 	};
     
 	*target = this;
-	if (index < 3)
+	if (index < 4)
 		return (IOExternalMethod *) (methodDescs + index);
 
     return NULL;
@@ -426,25 +428,97 @@ IOReturn AnVMSRUserClient::actionMethodWRMSR(UInt32 *dataIn, UInt32 *dataOut, IO
     return kIOReturnSuccess;
 }
 
-IOReturn AnVMSRUserClient::clientMemoryForType(UInt32 type, IOOptionBits *options,
-                                                  IOMemoryDescriptor **memory)
-{
-	IOBufferMemoryDescriptor *memDesc;
-	char *msgBuffer;
+//IOReturn AnVMSRUserClient::clientMemoryForType(UInt32 type, IOOptionBits *options,
+//                                                  IOMemoryDescriptor **memory)
+//{
+//	IOBufferMemoryDescriptor *memDesc;
+//	char *msgBuffer;
+//
+//    *options = 0;
+//	*memory = NULL;
+//
+//    memDesc = IOBufferMemoryDescriptor::withOptions(kIOMemoryKernelUserShared, mDevice->mPrefPanelMemoryBufSize);
+//
+//    if (!memDesc)
+//    {
+//        return kIOReturnUnsupported;
+//    }
+//
+//    msgBuffer = (char *) memDesc->getBytesNoCopy();
+//    bcopy(mDevice->mPrefPanelMemoryBuf, msgBuffer, mDevice->mPrefPanelMemoryBufSize);
+//    *memory = memDesc; // automatically released after memory is mapped into task
+//
+//    return(kIOReturnSuccess);
+//}
 
-    *options = 0;
-	*memory = NULL;
+IOReturn AnVMSRUserClient::actionMethodPrepareMap(UInt32 *dataIn, UInt32 *dataOut,
+                                                  IOByteCount inputSize, IOByteCount *outputSize) {
+    map_t *mapdata = (map_t *)dataIn;
+    map_t *mapoutdata = (map_t *)dataOut;
     
-    memDesc = IOBufferMemoryDescriptor::withOptions(kIOMemoryKernelUserShared, mDevice->mPrefPanelMemoryBufSize);
-
-    if (!memDesc)
+#ifdef  DEBUG
+    IOLog("VoltageShiftAnVMSR PrepareMap called\n");
+#endif
+    
+    if (!dataIn)
     {
         return kIOReturnUnsupported;
     }
+    
+    if(LastMapAddr || LastMapSize)
+        return kIOReturnNotOpen;
+    
+    LastMapAddr = mapdata->addr;
+    LastMapSize = mapdata->size;
+    
+#ifdef  DEBUG
+    IOLog("VoltageShiftAnVMSR: PrepareMap 0x%08llx[0x%llx]\n", LastMapAddr, LastMapSize);
+#endif
+    
+    *outputSize = sizeof(map_t);
+    
+    return kIOReturnSuccess;
+}
 
-    msgBuffer = (char *) memDesc->getBytesNoCopy();
-    bcopy(mDevice->mPrefPanelMemoryBuf, msgBuffer, mDevice->mPrefPanelMemoryBufSize);
-    *memory = memDesc; // automatically released after memory is mapped into task
-
-    return(kIOReturnSuccess);
+IOReturn AnVMSRUserClient::clientMemoryForType(UInt32 type, IOOptionBits *options,
+                                               IOMemoryDescriptor **memory)
+{
+    IOMemoryDescriptor *memDesc;
+    
+#ifdef DEBUG
+    IOLog("VoltageShiftAnVMSR: clientMemoryForType(%x, %p, %p)\n", type, options, memory);
+#endif
+    if (type != 0) {
+        IOLog("VoltageShiftAnVMSR: Unknown mapping type %x.\n", (unsigned int)type);
+        return kIOReturnUnsupported;
+    }
+    
+    if ((LastMapAddr == 0) && (LastMapSize == 0)) {
+        IOLog("VoltageShiftAnVMSR: No PrepareMap called.\n");
+        return kIOReturnNotAttached;
+    }
+    
+#ifdef DEBUG
+    IOLog("VoltageShiftAnVMSR: Mapping physical 0x%08llx[0x%llx]\n", LastMapAddr, LastMapSize);
+#endif
+    
+    memDesc = IOMemoryDescriptor::withPhysicalAddress(LastMapAddr, LastMapSize, kIODirectionIn);
+    
+    /* Reset mapping to zero */
+    LastMapAddr = 0;
+    LastMapSize = 0;
+    
+    if (memDesc == 0) {
+        IOLog("VoltageShiftAnVMSR: Could not map memory!\n");
+        return kIOReturnNotOpen;
+    }
+    
+    memDesc->retain();
+    *memory = memDesc;
+    
+#ifdef DEBUG
+    IOLog("VoltageShiftAnVMSR: Mapping succeeded.\n");
+#endif
+    
+    return kIOReturnSuccess;
 }
