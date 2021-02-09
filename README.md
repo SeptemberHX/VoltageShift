@@ -1,4 +1,12 @@
 # VoltageShift 
+
+> This is a patched version of VoltageShift. It adopts the changes from https://github.com/buliaoyin/VoltageShift which has the ability to modify **MCHBAR**
+
+> For some laptops such as HP laptops, changing LP1/LP2 doesn't work for higher TDP. In this situation, changing **MCHBAR** values could do the work !
+
+------
+
+
 Undervoltage Tools for MacOS (Haswell and Broadwell)<br />
 Change Turbo and Power Limit for most Intel platform Macbook
 All source code protected by      The GNU General Public License V 3.0   <br />
